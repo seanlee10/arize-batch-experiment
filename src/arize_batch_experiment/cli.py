@@ -33,7 +33,7 @@ def _parse_time(value: str) -> datetime:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="arize-batch",
-        description="Run Arize experiments and span evals through Gemini batch inference",
+        description="Run Arize experiments and span evals through Vertex AI batch inference",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

@@ -2,9 +2,9 @@
 
 Run large experiments and LLM-as-a-judge evaluations through **batch inference on Vertex AI** with Gemini or Anthropic Claude models (50% of the real-time price), then record the results in Arize as a normal experiment or as span evaluations.
 
-```
-Arize dataset / spans ──export──▶ BigQuery input ──batch job──▶ BigQuery output ──upload──▶ Arize
-```
+![Architecture: Arize dataset or spans are exported, written to BigQuery input tables, processed by Vertex AI batch jobs for the task and the LLM judge, then parsed, joined on example or span ID, and uploaded back to Arize as an experiment or span evals](assets/architecture.png)
+
+The 7-day table expiration in the diagram is a recommended setting on `BQ_DATASET`, not something the tool configures (see [BigQuery tables](#behaviour-worth-knowing)).
 
 Two commands:
 
@@ -132,7 +132,7 @@ If a job ends in a failed, cancelled or expired state, the command stops and pri
 - **Span evals skip unusable verdicts.** Spans whose judge reply failed or did not parse are not uploaded; the count is printed.
 - **Limits.** One Vertex AI batch job takes up to 200,000 requests. Once a job starts running, Vertex AI cancels whatever is not finished after 24 hours and charges only completed requests. Vertex AI gets better throughput from one large job than from many small ones.
 - **Caching.** On recent Gemini models, implicit caching is on in batch jobs. Cache and batch discounts do not stack; cached tokens get the cache discount instead. A long shared system prompt, such as the judge rubric, benefits from this.
-- **BigQuery tables.** Each run creates `<run id>_<stage>_in` and `<run id>_<stage>_out` tables in `BQ_DATASET`. Delete them, or set a default table expiration on the dataset, when you no longer need them.
+- **BigQuery tables.** Each run creates `<run id>_<stage>_in` and `<run id>_<stage>_out` tables in `BQ_DATASET`. Delete them when you no longer need them, or set a default table expiration on the dataset so they are removed automatically (it applies only to tables created afterwards), for example 7 days: `bq update --default_table_expiration 604800 <project>:<dataset>`.
 
 ## Project layout
 
