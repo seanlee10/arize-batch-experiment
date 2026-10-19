@@ -15,6 +15,12 @@ Two commands:
 
 BigQuery is used for batch input and output. The Arize example ID or span ID travels with each request (as an extra column for Gemini, as `custom_id` for Claude), so results join back exactly.
 
+### When to use batch
+
+Batch trades speed for price. Every batch job spends a few minutes in the queue and starting up, however small it is, and an experiment runs two jobs back to back (task, then judge). Expect about 10 minutes at minimum: in our tests, 5 rows took longer than 545. Real-time Arize experiments finish small datasets faster.
+
+Use batch for large datasets (thousands of rows and up, where real-time runs hit rate limits) and for scheduled runs nobody waits on, such as nightly regression evals. Keep real-time experiments for quick prompt iteration.
+
 ## Setup
 
 Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), and the `gcloud` CLI.
@@ -30,6 +36,7 @@ Google Cloud needs:
 - The Vertex AI API enabled in `GOOGLE_CLOUD_PROJECT`, and a model that supports batch inference (`MODEL`): a Gemini model such as `gemini-2.5-flash`, or a Claude model such as `claude-sonnet-5-5`. See [Using Claude models](#using-claude-models) for the extra setup Claude needs.
 - A BigQuery dataset (`BQ_DATASET`, as `project.dataset`) **in the same region as `GOOGLE_CLOUD_LOCATION`**. Batch output must be written to a dataset in the job's region.
 - Your credentials need to create BigQuery tables in that dataset and create Vertex AI batch jobs. The Vertex AI service agent of the project needs to read and write that dataset (for example `roles/bigquery.user`).
+- Application Default Credentials need a quota project: `gcloud auth application-default set-quota-project <project>`. ADC can be logged in as a different account than `gcloud`'s active one, so if Vertex AI returns `PERMISSION_DENIED`, check which account ADC uses.
 
 Arize needs an API key with write access to `ARIZE_SPACE_ID`. For a self-hosted installation, set `ARIZE_API_HOST` and `ARIZE_FLIGHT_HOST` (or `ARIZE_SINGLE_HOST`), and `ARIZE_SSL_CA_CERT` if the endpoints use an internal certificate authority.
 
@@ -56,6 +63,11 @@ Edit `src/arize_batch_experiment/prompts.py`:
 - `SPAN_JUDGE_PROMPT`: what the judge sees for a span. Placeholders are exported span columns, such as `{attributes.input.value}` and `{attributes.output.value}`. Only the columns used here are exported.
 
 Use `--eval-name` to change the eval name (default `correctness`). Keep it stable across runs so results accumulate under one eval.
+
+Two things to check in your dataset:
+
+- **No user column named `id`.** It overwrites Arize's example IDs: the export fails and runs cannot be linked back to examples. Rename the column and recreate the dataset.
+- **Exact answers don't need an LLM judge.** For multiple-choice or other exact-match data, run with `--no-judge` and score the outputs with an Arize code evaluator. That is one batch job instead of two, and stricter grading.
 
 ## Using Claude models
 
@@ -130,7 +142,7 @@ If a job ends in a failed, cancelled or expired state, the command stops and pri
 - **Failed rows are kept.** A request that fails in the batch job becomes a run with an empty output and a `task_error` column, so the experiment shows which examples failed. Judge failures and unparseable judge replies are recorded in `judge_error`.
 - **Extra run columns.** Each run also stores `model`, `task_error` and `judge_error`, which can be used as filters in the experiment view.
 - **Span evals skip unusable verdicts.** Spans whose judge reply failed or did not parse are not uploaded; the count is printed.
-- **Limits.** One Vertex AI batch job takes up to 200,000 requests. Once a job starts running, Vertex AI cancels whatever is not finished after 24 hours and charges only completed requests. Vertex AI gets better throughput from one large job than from many small ones.
+- **Limits.** One Vertex AI batch job takes up to 200,000 Gemini requests, and each stage is a single job: the tool does not split larger inputs, so use `--limit` or split the dataset. Once a job starts running, Vertex AI cancels whatever is not finished after 24 hours and charges only completed requests. Vertex AI gets better throughput from one large job than from many small ones.
 - **Caching.** On recent Gemini models, implicit caching is on in batch jobs. Cache and batch discounts do not stack; cached tokens get the cache discount instead. A long shared system prompt, such as the judge rubric, benefits from this.
 - **BigQuery tables.** Each run creates `<run id>_<stage>_in` and `<run id>_<stage>_out` tables in `BQ_DATASET`. Delete them when you no longer need them, or set a default table expiration on the dataset so they are removed automatically (it applies only to tables created afterwards), for example 7 days: `bq update --default_table_expiration 604800 <project>:<dataset>`.
 
