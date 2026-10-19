@@ -3,6 +3,8 @@ name = "arize-batch-experiment"
 version = "0.1.0"
 description = "Run Arize experiments and span evals through Gemini or Claude batch inference on Vertex AI"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "arize>=8.59.1",

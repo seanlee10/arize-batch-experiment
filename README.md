@@ -159,3 +159,7 @@ Run the tests with `uv run pytest`. They need no cloud access.
 - [Batch predictions with Anthropic Claude models](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude/batch)
 - [Batch inference from BigQuery](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/batch-prediction-from-bigquery)
 - Arize Python SDK: `client.experiments.create`, `client.spans.update_evaluations`
+
+## License
+
+[MIT](LICENSE)
