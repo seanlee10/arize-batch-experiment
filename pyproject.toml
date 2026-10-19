@@ -1,0 +1,34 @@
+[project]
+name = "arize-batch-experiment"
+version = "0.1.0"
+description = "Run Arize experiments and span evals through Gemini batch inference on Vertex AI"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "arize>=8.59.1",
+    "db-dtypes>=1.8.0",
+    "google-cloud-bigquery>=3.46.2",
+    "google-genai>=2.31.0",
+    "pandas>=2.3.3",
+    "pyarrow>=26.0.0",
+    "python-dotenv>=1.2.4",
+]
+
+[project.scripts]
+arize-batch = "arize_batch_experiment.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
