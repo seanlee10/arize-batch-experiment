@@ -6,7 +6,16 @@ import pytest
 from arize_batch_experiment import prompts
 from arize_batch_experiment.experiment import build_runs
 from arize_batch_experiment.span_evals import build_evals
-from arize_batch_experiment.vertex_batch import gemini_request, parse_output, response_text
+from arize_batch_experiment.vertex_batch import (
+    CLAUDE_MAX_TOKENS,
+    VertexBatch,
+    claude_request,
+    gemini_request,
+    is_claude,
+    model_resource,
+    parse_output,
+    response_text,
+)
 
 
 def test_gemini_request_shape():
@@ -118,3 +127,72 @@ def test_build_evals_drops_unusable_verdicts():
             "eval.correctness.explanation": None,
         }
     ]
+
+
+def test_claude_request_shape():
+    req = json.loads(claude_request("hi", system="sys"))
+    assert req == {
+        "anthropic_version": "vertex-2023-10-16",
+        "max_tokens": CLAUDE_MAX_TOKENS,
+        "messages": [{"role": "user", "content": "hi"}],
+        "system": "sys",
+    }
+
+
+@pytest.mark.parametrize(
+    "model,claude,resource",
+    [
+        ("gemini-2.5-flash", False, "gemini-2.5-flash"),
+        ("claude-sonnet-5-5", True, "publishers/anthropic/models/claude-sonnet-5-5"),
+        (
+            "publishers/anthropic/models/claude-haiku-5-5",
+            True,
+            "publishers/anthropic/models/claude-haiku-5-5",
+        ),
+    ],
+)
+def test_model_routing(model, claude, resource):
+    assert is_claude(model) is claude
+    assert model_resource(model) == resource
+
+
+def test_vertex_batch_builds_request_for_model():
+    def vb(model):
+        return VertexBatch(client=None, bq=None, model=model, dataset="p.d")
+
+    gemini = json.loads(vb("gemini-2.5-flash").request("hi", json_output=True, temperature=0))
+    claude = json.loads(vb("claude-sonnet-5-5").request("hi", json_output=True, temperature=0))
+    assert "contents" in gemini
+    assert "temperature" not in claude and claude["messages"][0]["content"] == "hi"
+
+
+def _claude_response(*blocks, stop_reason="end_turn", **extra):
+    return {"content": list(blocks), "stop_reason": stop_reason, **extra}
+
+
+def test_response_text_reads_claude_text_blocks_only():
+    response = _claude_response(
+        {"type": "thinking", "thinking": ""},
+        {"type": "text", "text": "a"},
+        {"type": "text", "text": "b"},
+    )
+    assert response_text(response) == "ab"
+    assert response_text(json.dumps(response)) == "ab"
+    assert response_text(_claude_response()) is None
+
+
+def test_parse_output_reports_claude_refusals():
+    rows = pd.DataFrame(
+        {
+            "example_id": ["a", "b", "c"],
+            "response": [
+                _claude_response({"type": "text", "text": "3"}),
+                _claude_response(stop_reason="refusal", stop_details={"category": "cyber"}),
+                _claude_response(stop_reason="refusal"),
+            ],
+            "status": ["", "", ""],
+        }
+    )
+    out = parse_output(rows, "example_id")
+    assert out["output"].tolist() == ["3", None, None]
+    assert out["error"].tolist() == [None, "Refused (cyber)", "Refused"]

@@ -10,16 +10,21 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-TASK_SYSTEM = "You are a helpful shopping assistant. Answer concisely."
-TASK_PROMPT = "{question}"
+TASK_SYSTEM = (
+    "You answer multiple-choice questions. Reply with the 0-based index of the correct "
+    "choice only, as a single digit."
+)
+TASK_PROMPT = "{question}\n\nChoices (JSON list, 0-based):\n{choices}"
 
 JUDGE_SYSTEM = (
-    "You are grading the answer of an AI assistant. "
+    "You are grading the answer of an AI assistant to a multiple-choice question. "
+    "The answer is correct if it selects the choice at the correct 0-based index. "
     'Reply with JSON only: {"label": "correct" | "incorrect", "score": 1 | 0, '
     '"explanation": "<one sentence>"}'
 )
 EXPERIMENT_JUDGE_PROMPT = (
-    "Question:\n{question}\n\nReference answer:\n{reference}\n\nAssistant answer:\n{output}"
+    "Question:\n{question}\n\nChoices (JSON list, 0-based):\n{choices}\n\n"
+    "Correct index:\n{answer}\n\nAssistant answer:\n{output}"
 )
 SPAN_JUDGE_PROMPT = (
     "User input:\n{attributes.input.value}\n\nAssistant output:\n{attributes.output.value}"

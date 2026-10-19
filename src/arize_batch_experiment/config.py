@@ -12,6 +12,10 @@ def _required(name: str) -> str:
     return value
 
 
+# The Arize SDK reads these itself and uses an empty value as the host instead of its default.
+_ARIZE_SDK_VARS = ("ARIZE_API_HOST", "ARIZE_FLIGHT_HOST", "ARIZE_SINGLE_HOST", "ARIZE_SSL_CA_CERT")
+
+
 def _optional(name: str) -> str | None:
     value = os.environ.get(name, "").strip()
     return value or None
@@ -28,12 +32,15 @@ class Settings:
     gcp_project: str
     gcp_location: str
     bq_dataset: str
-    gemini_model: str
+    model: str
     runs_dir: Path
 
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv()
+        for name in _ARIZE_SDK_VARS:
+            if not os.environ.get(name, "").strip():
+                os.environ.pop(name, None)
         return cls(
             arize_api_key=_required("ARIZE_API_KEY"),
             arize_space_id=_required("ARIZE_SPACE_ID"),
@@ -44,6 +51,6 @@ class Settings:
             gcp_project=_required("GOOGLE_CLOUD_PROJECT"),
             gcp_location=_required("GOOGLE_CLOUD_LOCATION"),
             bq_dataset=_required("BQ_DATASET"),
-            gemini_model=_required("GEMINI_MODEL"),
+            model=_required("MODEL"),
             runs_dir=Path(os.environ.get("RUNS_DIR", "runs")),
         )

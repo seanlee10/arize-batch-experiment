@@ -1,7 +1,7 @@
 [project]
 name = "arize-batch-experiment"
 version = "0.1.0"
-description = "Run Arize experiments and span evals through Gemini batch inference on Vertex AI"
+description = "Run Arize experiments and span evals through Gemini or Claude batch inference on Vertex AI"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

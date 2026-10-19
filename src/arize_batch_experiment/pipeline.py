@@ -38,7 +38,7 @@ def batch_stage(
         request_df = build_input()
         if request_df.empty:
             raise SystemExit(f"[{stage}] nothing to submit")
-        src = vb.write_input(request_df, vb.table(f"{run_id}_{stage}_in"))
+        src = vb.write_input(request_df, vb.table(f"{run_id}_{stage}_in"), id_column)
         job_name = vb.submit(src, out_table, display_name=f"{run_id}-{stage}")
         state.set(f"{stage}_input", src)
         state.set(f"{stage}_output_table", out_table)

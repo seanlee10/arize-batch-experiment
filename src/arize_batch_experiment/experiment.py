@@ -1,4 +1,4 @@
-"""Workflow A: run a dataset experiment through Gemini batch inference and log it to Arize."""
+"""Workflow A: run a dataset experiment through Vertex AI batch inference and log it to Arize."""
 
 from dataclasses import dataclass
 
@@ -7,11 +7,11 @@ from arize.experiments.evaluators.types import EvaluationResultFieldNames
 from arize.experiments.types import ExperimentTaskFieldNames
 
 from arize_batch_experiment import prompts
-from arize_batch_experiment.clients import arize_client, bigquery_client, gemini_client
+from arize_batch_experiment.clients import arize_client, bigquery_client, vertex_client
 from arize_batch_experiment.config import Settings
 from arize_batch_experiment.pipeline import batch_stage
 from arize_batch_experiment.state import RunState
-from arize_batch_experiment.vertex_batch import VertexBatch, gemini_request
+from arize_batch_experiment.vertex_batch import VertexBatch
 
 EXAMPLE_ID = "example_id"
 
@@ -51,26 +51,26 @@ def _export_examples(arize, settings: Settings, opts: ExperimentOptions, state: 
     return examples
 
 
-def _task_requests(examples: pd.DataFrame) -> pd.DataFrame:
+def _task_requests(vb: VertexBatch, examples: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(
         {
             EXAMPLE_ID: examples[EXAMPLE_ID],
             "request": [
-                gemini_request(prompts.render(prompts.TASK_PROMPT, row), system=prompts.TASK_SYSTEM)
+                vb.request(prompts.render(prompts.TASK_PROMPT, row), system=prompts.TASK_SYSTEM)
                 for row in examples.to_dict("records")
             ],
         }
     )
 
 
-def _judge_requests(examples: pd.DataFrame, task: pd.DataFrame) -> pd.DataFrame:
+def _judge_requests(vb: VertexBatch, examples: pd.DataFrame, task: pd.DataFrame) -> pd.DataFrame:
     rows = examples.merge(task[[EXAMPLE_ID, "output"]], on=EXAMPLE_ID)
     rows = rows[rows["output"].notna()]
     return pd.DataFrame(
         {
             EXAMPLE_ID: rows[EXAMPLE_ID],
             "request": [
-                gemini_request(
+                vb.request(
                     prompts.render(prompts.EXPERIMENT_JUDGE_PROMPT, row),
                     system=prompts.JUDGE_SYSTEM,
                     json_output=True,
@@ -104,9 +104,9 @@ def build_runs(
 def run(settings: Settings, opts: ExperimentOptions) -> None:
     arize = arize_client(settings)
     vb = VertexBatch(
-        gemini=gemini_client(settings),
+        client=vertex_client(settings),
         bq=bigquery_client(settings),
-        model=settings.gemini_model,
+        model=settings.model,
         dataset=settings.bq_dataset,
     )
     state = RunState.load(settings.runs_dir, opts.run_id)
@@ -125,19 +125,19 @@ def run(settings: Settings, opts: ExperimentOptions) -> None:
         resubmit_failed=opts.resubmit_failed,
     )
 
-    task = batch_stage(stage="task", build_input=lambda: _task_requests(examples), **common)
+    task = batch_stage(stage="task", build_input=lambda: _task_requests(vb, examples), **common)
     if task is None:
         return
 
     verdicts = None
     if opts.judge:
         verdicts = batch_stage(
-            stage="judge", build_input=lambda: _judge_requests(examples, task), **common
+            stage="judge", build_input=lambda: _judge_requests(vb, examples, task), **common
         )
         if verdicts is None:
             return
 
-    runs = build_runs(task, verdicts, opts.eval_name, settings.gemini_model)
+    runs = build_runs(task, verdicts, opts.eval_name, settings.model)
     evaluator_columns = None
     if verdicts is not None:
         evaluator_columns = {

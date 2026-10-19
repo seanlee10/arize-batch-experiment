@@ -1,4 +1,4 @@
-"""Workflow B: judge exported spans with Gemini batch inference and log evals back to Arize."""
+"""Workflow B: judge exported spans with Vertex AI batch inference and log evals back to Arize."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -6,11 +6,11 @@ from datetime import datetime
 import pandas as pd
 
 from arize_batch_experiment import prompts
-from arize_batch_experiment.clients import arize_client, bigquery_client, gemini_client
+from arize_batch_experiment.clients import arize_client, bigquery_client, vertex_client
 from arize_batch_experiment.config import Settings
 from arize_batch_experiment.pipeline import batch_stage
 from arize_batch_experiment.state import RunState
-from arize_batch_experiment.vertex_batch import VertexBatch, gemini_request
+from arize_batch_experiment.vertex_batch import VertexBatch
 
 SPAN_ID_COLUMN = "context.span_id"
 # BigQuery column names cannot contain dots.
@@ -54,12 +54,12 @@ def _export_spans(arize, settings: Settings, opts: SpanEvalOptions, state: RunSt
     return spans
 
 
-def _judge_requests(spans: pd.DataFrame) -> pd.DataFrame:
+def _judge_requests(vb: VertexBatch, spans: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(
         {
             SPAN_ID: spans[SPAN_ID_COLUMN],
             "request": [
-                gemini_request(
+                vb.request(
                     prompts.render(prompts.SPAN_JUDGE_PROMPT, row),
                     system=prompts.JUDGE_SYSTEM,
                     json_output=True,
@@ -90,9 +90,9 @@ def build_evals(verdicts: pd.DataFrame, eval_name: str) -> tuple[pd.DataFrame, i
 def run(settings: Settings, opts: SpanEvalOptions) -> None:
     arize = arize_client(settings)
     vb = VertexBatch(
-        gemini=gemini_client(settings),
+        client=vertex_client(settings),
         bq=bigquery_client(settings),
-        model=settings.gemini_model,
+        model=settings.model,
         dataset=settings.bq_dataset,
     )
     state = RunState.load(settings.runs_dir, opts.run_id)
@@ -110,7 +110,7 @@ def run(settings: Settings, opts: SpanEvalOptions) -> None:
         vb=vb,
         stage="span_judge",
         id_column=SPAN_ID,
-        build_input=lambda: _judge_requests(spans),
+        build_input=lambda: _judge_requests(vb, spans),
         wait=opts.wait,
         poll_seconds=opts.poll_seconds,
         resubmit_failed=opts.resubmit_failed,

@@ -39,7 +39,7 @@ def main() -> None:
 
     exp = sub.add_parser("experiment", help="Run a dataset experiment as a batch job")
     exp.add_argument("--dataset", required=True, help="Arize dataset name or ID")
-    exp.add_argument("--experiment-name", help="Defaults to gemini-batch-<run id>")
+    exp.add_argument("--experiment-name", help="Defaults to batch-<run id>")
     exp.add_argument("--no-judge", action="store_true", help="Skip the LLM judge stage")
     _common(exp)
 
@@ -62,7 +62,7 @@ def main() -> None:
             experiment.ExperimentOptions(
                 dataset=args.dataset,
                 run_id=run_id,
-                experiment_name=args.experiment_name or f"gemini-batch-{run_id}",
+                experiment_name=args.experiment_name or f"batch-{run_id}",
                 eval_name=args.eval_name,
                 judge=not args.no_judge,
                 limit=args.limit,

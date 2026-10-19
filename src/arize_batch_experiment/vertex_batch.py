@@ -21,6 +21,21 @@ TERMINAL_STATES = SUCCEEDED_STATES | FAILED_STATES
 # Vertex AI writes these into the output table; an input column with either name is rejected.
 RESERVED_COLUMNS = {"response", "status"}
 
+ANTHROPIC_VERSION = "vertex-2023-10-16"
+# Claude requires max_tokens; it also covers thinking tokens on models where thinking is on.
+CLAUDE_MAX_TOKENS = 16000
+
+
+def is_claude(model: str) -> bool:
+    return model.startswith("claude") or model.startswith("publishers/anthropic/")
+
+
+def model_resource(model: str) -> str:
+    """Name to pass to Vertex AI: Gemini names as given, Claude under the Anthropic publisher."""
+    if is_claude(model) and not model.startswith("publishers/"):
+        return f"publishers/anthropic/models/{model}"
+    return model
+
 
 def gemini_request(
     prompt: str,
@@ -42,15 +57,39 @@ def gemini_request(
     return json.dumps(request, ensure_ascii=False)
 
 
-def response_text(response: Any) -> str | None:
+def claude_request(prompt: str, *, system: str | None = None) -> str:
+    # No temperature: recent Claude models reject non-default sampling parameters. JSON replies
+    # come from the prompt, since the judge prompt already asks for JSON only.
+    request: dict[str, Any] = {
+        "anthropic_version": ANTHROPIC_VERSION,
+        "max_tokens": CLAUDE_MAX_TOKENS,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if system:
+        request["system"] = system
+    return json.dumps(request, ensure_ascii=False)
+
+
+def _response_dict(response: Any) -> Mapping | None:
     if response is None or (isinstance(response, float) and pd.isna(response)):
         return None
     if isinstance(response, str):
         if not response.strip():
             return None
         response = json.loads(response)
-    if not isinstance(response, Mapping):
+    return response if isinstance(response, Mapping) else None
+
+
+def response_text(response: Any) -> str | None:
+    response = _response_dict(response)
+    if response is None:
         return None
+    if "content" in response:  # Claude: a Messages API response
+        blocks = response.get("content") or []
+        text = "".join(
+            b.get("text", "") for b in blocks if isinstance(b, Mapping) and b.get("type") == "text"
+        )
+        return text or None
     candidates = response.get("candidates") or []
     if not candidates:
         return None
@@ -66,10 +105,18 @@ def status_error(status: Any) -> str | None:
     return status or None
 
 
+def refusal_error(response: Any) -> str | None:
+    response = _response_dict(response)
+    if response is None or response.get("stop_reason") != "refusal":
+        return None
+    category = (response.get("stop_details") or {}).get("category")
+    return f"Refused ({category})" if category else "Refused"
+
+
 def parse_output(rows: pd.DataFrame, id_column: str) -> pd.DataFrame:
     out = pd.DataFrame({id_column: rows[id_column]})
     out["output"] = rows["response"].map(response_text)
-    out["error"] = rows["status"].map(status_error)
+    out["error"] = rows["status"].map(status_error).fillna(rows["response"].map(refusal_error))
     missing = out["output"].isna() & out["error"].isna()
     out.loc[missing, "error"] = "Empty response"
     return out.reset_index(drop=True)
@@ -77,7 +124,7 @@ def parse_output(rows: pd.DataFrame, id_column: str) -> pd.DataFrame:
 
 @dataclass
 class VertexBatch:
-    gemini: genai.Client
+    client: genai.Client
     bq: bigquery.Client
     model: str
     dataset: str
@@ -85,12 +132,30 @@ class VertexBatch:
     def table(self, name: str) -> str:
         return f"{self.dataset}.{name}"
 
-    def write_input(self, df: pd.DataFrame, table: str) -> str:
+    def request(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        json_output: bool = False,
+        temperature: float | None = None,
+    ) -> str:
+        """Build one request body in the format the configured model expects."""
+        if is_claude(self.model):
+            return claude_request(prompt, system=system)
+        return gemini_request(
+            prompt, system=system, json_output=json_output, temperature=temperature
+        )
+
+    def write_input(self, df: pd.DataFrame, table: str, id_column: str) -> str:
         clash = RESERVED_COLUMNS & set(df.columns)
         if clash:
             raise ValueError(f"Input columns {sorted(clash)} are reserved by Vertex AI")
         if "request" not in df.columns:
             raise ValueError("Input needs a `request` column")
+        if is_claude(self.model):
+            # Claude batch jobs match outputs to inputs by custom_id.
+            df = df.assign(custom_id=df[id_column].astype(str))
         self.bq.load_table_from_dataframe(
             df,
             table,
@@ -99,15 +164,15 @@ class VertexBatch:
         return f"bq://{table}"
 
     def submit(self, src: str, dest_table: str, display_name: str) -> str:
-        job = self.gemini.batches.create(
-            model=self.model,
+        job = self.client.batches.create(
+            model=model_resource(self.model),
             src=src,
             config=CreateBatchJobConfig(dest=f"bq://{dest_table}", display_name=display_name),
         )
         return job.name
 
     def get(self, job_name: str) -> BatchJob:
-        return self.gemini.batches.get(name=job_name)
+        return self.client.batches.get(name=job_name)
 
     def wait(self, job_name: str, poll_seconds: int = 60) -> BatchJob:
         job = self.get(job_name)
@@ -122,5 +187,6 @@ class VertexBatch:
         return job
 
     def read_output(self, table: str, id_column: str) -> pd.DataFrame:
-        rows = self.bq.query(f"SELECT {id_column}, response, status FROM `{table}`").to_dataframe()
+        key = f"custom_id AS {id_column}" if is_claude(self.model) else id_column
+        rows = self.bq.query(f"SELECT {key}, response, status FROM `{table}`").to_dataframe()
         return parse_output(rows, id_column)

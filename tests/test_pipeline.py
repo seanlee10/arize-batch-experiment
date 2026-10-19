@@ -17,7 +17,7 @@ class FakeBatch:
     def table(self, name):
         return f"proj.ds.{name}"
 
-    def write_input(self, df, table):
+    def write_input(self, df, table, id_column):
         return f"bq://{table}"
 
     def submit(self, src, dest_table, display_name):

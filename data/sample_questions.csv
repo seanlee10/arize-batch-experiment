@@ -1,11 +1,11 @@
-question,reference
-What is the return window for most items?,Most items can be returned within 30 days of delivery.
-Can I change my delivery address after placing an order?,You can change the address until the order has been shipped.
-How do I track my package?,Open the order in your order history and select Track package.
-Is there a fee for cancelling an order?,No. Orders can be cancelled for free before they ship.
-What payment methods are accepted?,"Credit and debit cards, bank transfer and the store wallet are accepted."
-How long does a refund take?,Refunds are issued within 3 to 5 business days after the return is received.
-Can I order without creating an account?,"No, an account is required to place an order."
-What happens if an item arrives damaged?,Report it within 7 days and a replacement or full refund is provided.
-Do you deliver on weekends?,"Yes, standard delivery runs seven days a week in most areas."
-How can I contact customer support?,Use the in-app chat or call the support line listed in the help center.
+question,choices,answer
+What is the boiling point of water at sea level in Celsius?,"[""90"", ""100"", ""110"", ""120""]",1
+Which planet is closest to the Sun?,"[""Venus"", ""Earth"", ""Mercury"", ""Mars""]",2
+What gas do plants absorb from the air for photosynthesis?,"[""Carbon dioxide"", ""Oxygen"", ""Nitrogen"", ""Helium""]",0
+How many continents are there?,"[""Five"", ""Six"", ""Seven"", ""Eight""]",2
+Who wrote the play Romeo and Juliet?,"[""Charles Dickens"", ""William Shakespeare"", ""Jane Austen"", ""Mark Twain""]",1
+What is the largest ocean on Earth?,"[""Atlantic"", ""Indian"", ""Arctic"", ""Pacific""]",3
+What is the chemical symbol for gold?,"[""Ag"", ""Gd"", ""Au"", ""Go""]",2
+How many bits are in a byte?,"[""Eight"", ""Four"", ""Sixteen"", ""Two""]",0
+Which layer of the atmosphere contains most of the ozone?,"[""Troposphere"", ""Stratosphere"", ""Mesosphere"", ""Thermosphere""]",1
+What is the capital of Australia?,"[""Sydney"", ""Melbourne"", ""Perth"", ""Canberra""]",3

@@ -20,7 +20,7 @@ def arize_client(settings: Settings) -> ArizeClient:
     return ArizeClient(**kwargs)
 
 
-def gemini_client(settings: Settings) -> genai.Client:
+def vertex_client(settings: Settings) -> genai.Client:
     return genai.Client(
         vertexai=True,
         project=settings.gcp_project,

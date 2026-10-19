@@ -1,6 +1,6 @@
-# Arize experiments and evals with Gemini batch inference
+# Arize experiments and evals with Vertex AI batch inference
 
-Run large experiments and LLM-as-a-judge evaluations through **Gemini batch inference on Vertex AI** (50% of the real-time price), then record the results in Arize as a normal experiment or as span evaluations.
+Run large experiments and LLM-as-a-judge evaluations through **batch inference on Vertex AI** with Gemini or Anthropic Claude models (50% of the real-time price), then record the results in Arize as a normal experiment or as span evaluations.
 
 ```
 Arize dataset / spans ──export──▶ BigQuery input ──batch job──▶ BigQuery output ──upload──▶ Arize
@@ -13,7 +13,7 @@ Two commands:
 | `arize-batch experiment` | An Arize dataset | A new experiment on the dataset: one run per example, plus a judge eval per run |
 | `arize-batch span-evals` | Spans from a tracing project | An eval (label, score, explanation) on each span |
 
-BigQuery is used for batch input and output because Vertex AI copies every extra input column into the output table. The Arize example ID or span ID travels with each request, so results join back exactly.
+BigQuery is used for batch input and output. The Arize example ID or span ID travels with each request (as an extra column for Gemini, as `custom_id` for Claude), so results join back exactly.
 
 ## Setup
 
@@ -27,7 +27,7 @@ gcloud auth application-default login
 
 Google Cloud needs:
 
-- The Vertex AI API enabled in `GOOGLE_CLOUD_PROJECT`, and a Gemini model that supports batch inference (`GEMINI_MODEL`).
+- The Vertex AI API enabled in `GOOGLE_CLOUD_PROJECT`, and a model that supports batch inference (`MODEL`): a Gemini model such as `gemini-2.5-flash`, or a Claude model such as `claude-sonnet-5-5`. See [Using Claude models](#using-claude-models) for the extra setup Claude needs.
 - A BigQuery dataset (`BQ_DATASET`, as `project.dataset`) **in the same region as `GOOGLE_CLOUD_LOCATION`**. Batch output must be written to a dataset in the job's region.
 - Your credentials need to create BigQuery tables in that dataset and create Vertex AI batch jobs. The Vertex AI service agent of the project needs to read and write that dataset (for example `roles/bigquery.user`).
 
@@ -35,7 +35,7 @@ Arize needs an API key with write access to `ARIZE_SPACE_ID`. For a self-hosted 
 
 ## Quick start
 
-Create the sample dataset (10 customer-support questions with reference answers), then run a pilot:
+Create the sample dataset (10 multiple-choice questions with `question`, `choices` and the 0-based `answer` index, the format the default prompts expect), then run a pilot:
 
 ```bash
 uv run python scripts/create_sample_dataset.py
@@ -57,6 +57,22 @@ Edit `src/arize_batch_experiment/prompts.py`:
 
 Use `--eval-name` to change the eval name (default `correctness`). Keep it stable across runs so results accumulate under one eval.
 
+## Using Claude models
+
+Set `MODEL` to a Claude model ID, for example `claude-sonnet-5-5`, `claude-opus-5-5` or `claude-haiku-5-5`. Any name starting with `claude` is sent to Vertex AI as `publishers/anthropic/models/<name>`. Nothing else changes in the commands.
+
+Before the first run:
+
+- **Enable the model** in Model Garden for your project. Some models, such as Claude Fable 5.1, also require data sharing with Anthropic to be turned on there.
+- **Region.** The batch job runs in `GOOGLE_CLOUD_LOCATION`, and `BQ_DATASET` must be in the same region. That region has to serve the Claude model you chose; check [Claude regions](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude#regions).
+- **Quota.** New projects often have no Claude quota. By default a project can run 4 concurrent Claude batch requests.
+
+How requests differ from Gemini:
+
+- Each request is an Anthropic Messages API body with `anthropic_version: "vertex-2023-10-16"` and `max_tokens` 16000 (`CLAUDE_MAX_TOKENS` in `vertex_batch.py`). On models where thinking is always on, thinking tokens count toward this limit.
+- No temperature and no JSON mode are sent. Recent Claude models reject non-default sampling parameters, and the judge prompt already asks for a JSON reply.
+- A refused request (`stop_reason: "refusal"`) is recorded with an empty output and the error `Refused (<category>)`.
+
 ## Commands
 
 ### Experiment on a dataset
@@ -67,7 +83,7 @@ uv run arize-batch experiment --dataset <name-or-id> [options]
 
 | Option | Meaning |
 |---|---|
-| `--experiment-name` | Experiment name; must be unique per dataset. Default `gemini-batch-<run id>` |
+| `--experiment-name` | Experiment name; must be unique per dataset. Default `batch-<run id>` |
 | `--no-judge` | Log task outputs only, without the judge stage |
 | `--limit N` | Use only the first N examples |
 
@@ -126,7 +142,7 @@ src/arize_batch_experiment/
   experiment.py    workflow A: dataset → batch task → batch judge → Arize experiment
   span_evals.py    workflow B: spans → batch judge → Arize span evals
   pipeline.py      one resumable batch stage (submit, wait, read output)
-  vertex_batch.py  Gemini request building, BigQuery I/O, Vertex AI batch jobs
+  vertex_batch.py  Gemini and Claude request building, BigQuery I/O, Vertex AI batch jobs
   prompts.py       prompt templates and judge reply parsing
   state.py         per-run state file
   config.py        settings from environment / .env
@@ -140,5 +156,6 @@ Run the tests with `uv run pytest`. They need no cloud access.
 ## References
 
 - [Batch inference with Gemini](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/batch-prediction-gemini)
+- [Batch predictions with Anthropic Claude models](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude/batch)
 - [Batch inference from BigQuery](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/batch-prediction-from-bigquery)
 - Arize Python SDK: `client.experiments.create`, `client.spans.update_evaluations`
